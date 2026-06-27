@@ -4,7 +4,7 @@ function getModel(systemInstruction) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY not set in .env");
   const genAI = new GoogleGenerativeAI(apiKey);
-  return genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction });
+  return genAI.getGenerativeModel({ model: "gemini-flash-latest", systemInstruction });
 }
 
 async function generateReflection(journalContent) {
