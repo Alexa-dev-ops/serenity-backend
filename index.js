@@ -15,7 +15,14 @@ const resourceRoutes     = require("./routes/resources");
 const adminRoutes        = require("./routes/admin");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    "https://serenity-app-mu.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+  ],
+  credentials: true,
+}));
 app.use(express.json());
 
 // Routes
