@@ -1,6 +1,8 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// If the primary model is overloaded, try these in order before giving up.
+// If the primary model is overloaded or out of daily quota, try these in
+// order before giving up. Quota (429) is tracked per model, so a different
+// model here usually has its own separate daily allowance.
 const MODEL_FALLBACKS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
 
 function getModel(modelName) {
@@ -10,13 +12,24 @@ function getModel(modelName) {
   return genAI.getGenerativeModel({ model: modelName });
 }
 
+// 503 = transient high demand — a short retry on the SAME model often helps.
 function isOverloaded(err) {
   return err.message?.includes("503") || err.message?.includes("overloaded") || err.message?.includes("high demand");
 }
 
-// Runs `fn(modelName)` against each fallback model in turn. Only moves to the
-// next model on an overload (503) error — any other error fails immediately,
-// since retrying a different model won't fix a bad key or invalid request.
+// 429 = quota/rate limit exceeded — retrying the same model is pointless
+// (daily quota won't reset in seconds). Only switching models can help.
+function isQuotaExceeded(err) {
+  return err.message?.includes("429") || err.message?.includes("quota") || err.message?.includes("Too Many Requests");
+}
+
+function shouldTryNextModel(err) {
+  return isOverloaded(err) || isQuotaExceeded(err);
+}
+
+// Runs `fn(modelName)` against each fallback model in turn. Moves to the next
+// model on overload OR quota errors. Any other error (bad key, bad request,
+// etc.) fails immediately, since switching models won't fix those.
 async function withModelFallback(fn) {
   let lastErr;
   for (const modelName of MODEL_FALLBACKS) {
@@ -24,7 +37,7 @@ async function withModelFallback(fn) {
       return await fn(modelName);
     } catch (err) {
       lastErr = err;
-      if (!isOverloaded(err)) throw err;
+      if (!shouldTryNextModel(err)) throw err;
       // else: try the next model in the fallback list
     }
   }
@@ -91,25 +104,23 @@ ${userContext}`;
 
   const lastMessage = messages[messages.length - 1].content;
 
-  // Tries each fallback model; within a given model, retries briefly on 503
-  // before moving to the next model in the list.
   return await withModelFallback(async (modelName) => {
     const model = getModel(modelName);
     const chat = model.startChat({ history: [...priming, ...history] });
 
-    const MAX_ATTEMPTS = 2;
-    let lastErr;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
+    // Only retry within the SAME model for transient 503s — a quota (429)
+    // error won't resolve in a second or two, so skip straight to fallback.
+    try {
+      const result = await chat.sendMessage(lastMessage);
+      return result.response.text();
+    } catch (err) {
+      if (isOverloaded(err)) {
+        await new Promise((r) => setTimeout(r, 1000));
         const result = await chat.sendMessage(lastMessage);
         return result.response.text();
-      } catch (err) {
-        lastErr = err;
-        if (!isOverloaded(err) || attempt === MAX_ATTEMPTS) throw err;
-        await new Promise((r) => setTimeout(r, attempt * 1000)); // 1s
       }
+      throw err;
     }
-    throw lastErr;
   });
 }
 
