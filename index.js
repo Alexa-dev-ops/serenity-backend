@@ -15,6 +15,7 @@ const resourceRoutes     = require("./routes/resources");
 const adminRoutes        = require("./routes/admin");
 
 const app = express();
+
 app.use(cors({
   origin: [
     "https://serenity-app-mu.vercel.app",
@@ -24,6 +25,9 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+
+// Health check — no auth required, used by uptime monitors
+app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 // Routes
 app.use("/api/auth",          authRoutes);
