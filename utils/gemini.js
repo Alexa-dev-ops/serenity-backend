@@ -53,12 +53,6 @@ ${userContext}`;
 
   const model = getModel();
 
-  // Passing systemInstruction directly to getGenerativeModel() has proven
-  // unreliable on this SDK — it can get folded into chat contents as an
-  // implicit 'model'-role turn, tripping Gemini's "first content must be
-  // role 'user'" check even when the real conversation history is empty.
-  // Prepending the system prompt as an explicit user/model turn pair avoids
-  // the bug entirely, since the array always starts with role 'user'.
   const priming = [
     { role: "user", parts: [{ text: SYSTEM }] },
     { role: "model", parts: [{ text: "Understood. I'm ready to support this person in their recovery." }] },
@@ -70,8 +64,23 @@ ${userContext}`;
   }));
 
   const chat = model.startChat({ history: [...priming, ...history] });
-  const result = await chat.sendMessage(messages[messages.length - 1].content);
-  return result.response.text();
+
+  // Gemini occasionally returns 503 under high demand — usually resolves
+  // within a few seconds. Retry briefly before giving up.
+  const MAX_ATTEMPTS = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await chat.sendMessage(messages[messages.length - 1].content);
+      return result.response.text();
+    } catch (err) {
+      lastErr = err;
+      const is503 = err.message?.includes("503") || err.message?.includes("overloaded") || err.message?.includes("high demand");
+      if (!is503 || attempt === MAX_ATTEMPTS) throw err;
+      await new Promise((r) => setTimeout(r, attempt * 1000)); // 1s, then 2s
+    }
+  }
+  throw lastErr;
 }
 
 module.exports = { generateReflection, generatePlanDescription, chatWithGemini };
