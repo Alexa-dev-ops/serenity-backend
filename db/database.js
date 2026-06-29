@@ -71,6 +71,14 @@ async function initDB() {
       read_time_minutes INTEGER DEFAULT 5,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      messages TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
   `);
 
   const count = queryOne("SELECT COUNT(*) as c FROM users")?.c;
